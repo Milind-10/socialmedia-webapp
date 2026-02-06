@@ -31,7 +31,7 @@ def signup(request):
             fnm = request.POST.get('fnm')
             emailid = request.POST.get('emailid')
             pwd = request.POST.get('pwd')
-            print(fnm, emailid, pwd)
+            # Removed insecure print
             my_user = User.objects.create_user(fnm, emailid, pwd)
             my_user.save()
             user_model = User.objects.get(username=fnm)
@@ -53,7 +53,7 @@ def loginn(request):
     if request.method == 'POST':
         fnm = request.POST.get('fnm')
         pwd = request.POST.get('pwd')
-        print(fnm, pwd)
+        # Removed insecure print
         userr = authenticate(request, username=fnm, password=pwd)
         if userr is not None:
             login(request, userr)
@@ -73,10 +73,10 @@ def logoutt(request):
 
 @login_required(login_url='/loginn')
 def home(request):
-    following_users = Followers.objects.filter(
-        follower=request.user.username).values_list('user', flat=True)
-    post = Post.objects.filter(Q(user=request.user.username) | Q(
-        user__in=following_users)).order_by('-created_at')
+    following_users = list(Followers.objects.filter(
+        follower=request.user).values_list('user', flat=True))
+    following_users.append(request.user.id)
+    post = Post.objects.filter(user__in=following_users).order_by('-created_at')
     profile = Profile.objects.get(user=request.user)
 
     context = {
@@ -89,7 +89,7 @@ def home(request):
 @login_required(login_url='/loginn')
 def upload(request):
     if request.method == 'POST':
-        user = request.user.username
+        user = request.user
         image = request.FILES.get('image_upload')
         caption = request.POST['caption']
 
@@ -104,14 +104,14 @@ def upload(request):
 @login_required(login_url='/loginn')
 def likes(request, id):
     if request.method == 'GET':
-        username = request.user.username
+        user = request.user
         post = get_object_or_404(Post, id=id)
 
         like_filter = LikePost.objects.filter(
-            post_id=id, username=username).first()
+            post=post, user=user).first()
 
         if like_filter is None:
-            new_like = LikePost.objects.create(post_id=id, username=username)
+            new_like = LikePost.objects.create(post=post, user=user)
             post.no_of_likes = post.no_of_likes + 1
         else:
             like_filter.delete()
@@ -139,19 +139,19 @@ def profile(request, id_user):
     user_object = User.objects.get(username=id_user)
     profile = Profile.objects.get(user=request.user)
     user_profile = Profile.objects.get(user=user_object)
-    user_posts = Post.objects.filter(user=id_user).order_by('-created_at')
+    user_posts = Post.objects.filter(user=user_object).order_by('-created_at')
     user_post_length = len(user_posts)
 
     follower = request.user.username
     user = id_user
 
-    if Followers.objects.filter(follower=follower, user=user).first():
+    if Followers.objects.filter(follower=request.user, user=user_object).first():
         follow_unfollow = 'Unfollow'
     else:
         follow_unfollow = 'Follow'
 
-    user_followers = len(Followers.objects.filter(user=id_user))
-    user_following = len(Followers.objects.filter(follower=id_user))
+    user_followers = len(Followers.objects.filter(user=user_object))
+    user_following = len(Followers.objects.filter(follower=user_object))
 
     context = {
         'user_object': user_object,
@@ -227,17 +227,18 @@ def home_post(request, id):
 @login_required(login_url='/loginn')
 def follow(request):
     if request.method == 'POST':
-        follower = request.POST['follower']
+        follower = request.user
         user = request.POST['user']
+        user_object = User.objects.get(username=user)
 
-        if Followers.objects.filter(follower=follower, user=user).first():
+        if Followers.objects.filter(follower=follower, user=user_object).first():
             delete_follower = Followers.objects.get(
-                follower=follower, user=user)
+                follower=follower, user=user_object)
             delete_follower.delete()
             return redirect('/profile/' + user)
         else:
             new_follower = Followers.objects.create(
-                follower=follower, user=user)
+                follower=follower, user=user_object)
             new_follower.save()
             return redirect('/profile/' + user)
     else:
@@ -273,11 +274,11 @@ def search_results(request):
     for user_profile in users:
         # Count posts for this user
         post_count = Post.objects.filter(
-            user=user_profile.user.username).count()
+            user=user_profile.user).count()
 
         # Count followers for this user
         follower_count = Followers.objects.filter(
-            user=user_profile.user.username).count()
+            user=user_profile.user).count()
 
         user_details.append({
             'profile': user_profile,
